@@ -21,6 +21,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
@@ -351,6 +352,7 @@ type ChainConfig struct {
 	FjordTime    *uint64 `json:"fjordTime,omitempty"`    // Fjord switch time (nil = no fork, 0 = already on Optimism Fjord)
 	GraniteTime  *uint64 `json:"graniteTime,omitempty"`  // Granite switch time (nil = no fork, 0 = already on Optimism Granite)
 	HoloceneTime *uint64 `json:"holoceneTime,omitempty"` // Holocene switch time (nil = no fork, 0 = already on Optimism Holocene)
+	IsthmusTime  *uint64 `json:"isthmusTime,omitempty"`  // Isthmus switch time (nil = no fork, 0 = already on Optimism Isthmus)
 
 	InteropTime *uint64 `json:"interopTime,omitempty"` // Interop switch time (nil = no fork, 0 = already on optimism interop)
 
@@ -515,6 +517,9 @@ func (c *ChainConfig) Description() string {
 	if c.HoloceneTime != nil {
 		banner += fmt.Sprintf(" - Holocene:                     @%-10v\n", *c.HoloceneTime)
 	}
+	if c.IsthmusTime != nil {
+		banner += fmt.Sprintf(" - Isthmus:                     @%-10v\n", *c.IsthmusTime)
+	}
 	if c.InteropTime != nil {
 		banner += fmt.Sprintf(" - Interop:                     @%-10v\n", *c.InteropTime)
 	}
@@ -655,6 +660,10 @@ func (c *ChainConfig) IsHolocene(time uint64) bool {
 	return isTimestampForked(c.HoloceneTime, time)
 }
 
+func (c *ChainConfig) IsIsthmus(time uint64) bool {
+	return isTimestampForked(c.IsthmusTime, time)
+}
+
 func (c *ChainConfig) IsInterop(time uint64) bool {
 	return isTimestampForked(c.InteropTime, time)
 }
@@ -693,6 +702,10 @@ func (c *ChainConfig) IsOptimismHolocene(time uint64) bool {
 	return c.IsOptimism() && c.IsHolocene(time)
 }
 
+func (c *ChainConfig) IsOptimismIsthmus(time uint64) bool {
+	return c.IsOptimism() && c.IsIsthmus(time)
+}
+
 // IsOptimismPreBedrock returns true iff this is an optimism node & bedrock is not yet active
 func (c *ChainConfig) IsOptimismPreBedrock(num *big.Int) bool {
 	return c.IsOptimism() && !c.IsBedrock(num)
@@ -709,6 +722,7 @@ func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height, time uint64, 
 	var lasterr *ConfigCompatError
 	for {
 		err := c.checkCompatible(newcfg, bhead, btime, genesisTimestamp)
+		log.Info("Checking compatibility", "height", bhead, "time", btime, "error", err)
 		if err == nil || (lasterr != nil && err.RewindToBlock == lasterr.RewindToBlock && err.RewindToTime == lasterr.RewindToTime) {
 			break
 		}
@@ -955,7 +969,7 @@ func configBlockEqual(x, y *big.Int) bool {
 // isForkTimestampIncompatible returns true if a fork scheduled at timestamp s1
 // cannot be rescheduled to timestamp s2 because head is already past the fork.
 func isForkTimestampIncompatible(s1, s2 *uint64, head uint64, genesis *uint64) bool {
-	return (isTimestampForked(s1, head) || isTimestampForked(s2, head)) && !configTimestampEqual(s1, s2) && !isTimestampPreGenesis(s1, genesis) && !isTimestampPreGenesis(s2, genesis)
+	return (isTimestampForked(s1, head) || isTimestampForked(s2, head)) && !configTimestampEqual(s1, s2) && !(isTimestampPreGenesis(s1, genesis) && isTimestampPreGenesis(s2, genesis))
 }
 
 func isTimestampPreGenesis(s, genesis *uint64) bool {
@@ -1116,4 +1130,8 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsOptimismGranite:  isMerge && c.IsOptimismGranite(timestamp),
 		IsOptimismHolocene: isMerge && c.IsOptimismHolocene(timestamp),
 	}
+}
+
+func (c *ChainConfig) HasOptimismWithdrawalsRoot(blockTime uint64) bool {
+	return c.IsOptimismIsthmus(blockTime)
 }
